@@ -1,4 +1,4 @@
-function signal = getSignal(filename,backgroundSubtractOption,medianFilterOption,binOption,binning)
+function signal = getSignal(filename,medianFilterOption,binOption,binning,backgroundSubtractOption,backgroundSubtractMethod)
 
 %% function takes a .tif stack and returns overall signal.
 % steps performed:
@@ -18,20 +18,6 @@ function signal = getSignal(filename,backgroundSubtractOption,medianFilterOption
 
 % FUNCTION
 
-%% specify missing input arguments
-if nargin <5
-    binning = '2x2';
-    if nargin <4
-        binOption = false;
-        if nargin <3
-            medianFilterOption = false;
-            if nargin <2
-                backgroundSubtractOption = true;
-            end
-        end
-    end
-end
-
 
 %% get info
 info = imfinfo(filename);
@@ -42,51 +28,84 @@ if strcmp(binning, '2x2') % pre-acquisition binning
 end
 
 %% get background signal from one sample frame
-% % two methods for getting signal from sample frame
+% three methods for getting signal from sample frame
+
 if backgroundSubtractOption
-    
-    % % method one: take median signal from the last frame (works if all food is depleted at the end; doesn't work for controls)
-    % image = imread(filename, numImages-2); % read second to the last frame
-    % backgroundSignal = median(image(:));
-    
-    % method two: sample one frame towards (but isn't) the beginning of the recording and use signal from two corners
-    % read 30th image frame (select 30 because background seems to vary at the start)
-    sampleFrame = 30; % 30
-    if contains(filename,'multiSample_20181219')
-        sampleFrame = 20; % 30th frame is weird for this set of recordings
+    %% select a sample frame
+        % read the last frame for method 1 (works if all food is depleted at the end; doesn't work for controls)
+    if backgroundSubtractMethod == 1
+        if contains(filename,'75hr') & contains(filename,'60sInt')
+            image = double(imread(filename, 600)); % read the frame corresponding to 10th hour at 1fpm
+        elseif contains(filename,'16hr')
+            image = double(imread(filename, 120));
+        else
+            image = double(imread(filename, numImages)); % read the last frame
+        end
+        % read 30th image frame for methods 2 and 3 (select 30 because background seems to vary at the start)
+    else
+        sampleFrame = 30; % 30
+        if contains(filename,'multiSample_20181219')
+            sampleFrame = 20; % 30th frame is weird for this set of recordings
+        end
+        if  numImages<=sampleFrame
+            sampleFrame = numImages;
+        end
+        image = double(imread(filename, sampleFrame));
     end
-    if  numImages<=sampleFrame
-        sampleFrame = numImages;
-    end
-    image = imread(filename, sampleFrame);
+    
+    %% apply border crop, despeckle and bin options to sample image, if selected
+    % crop out the bordering 3% from all four sides
+    [imageHeight,imageWidth] = size(image);
+    image = image(round(0.03*imageHeight):round(0.97*imageHeight), round(0.03*imageWidth):round(0.97*imageWidth));
     % median filter to despeckle
     if medianFilterOption
         image = medfilt2(image);
     end
-    % bin image
-    if binOption
-        if ~strcmp(binning,'8x8')
-            image = bin_matrix(image, binFactor);
+    if backgroundSubtractMethod == 1 | backgroundSubtractMethod == 3
+        % bin image
+        if binOption
+            if ~strcmp(binning,'8x8')
+                image = bin_matrix(image, binFactor);
+            end
         end
     end
-    % get signal from two corners
-    [imageHeight,imageWidth] = size(image);
-    topRightCorner = image(1:round(0.1*imageHeight),round(0.9*imageWidth):imageWidth); % top right 10% of image
-    bottomRightCorner = image(round(0.9*imageHeight):imageHeight,round(0.9*imageWidth):imageWidth); % bottom right 10% of image
-    topRightSignal = sum(topRightCorner(:))/numel(topRightCorner);
-    bottomRightSignal = sum(bottomRightCorner(:))/numel(bottomRightCorner);
-    % get average background signal for those two sample sqaures
-    backgroundSignal = mean([topRightSignal bottomRightSignal]);
-    % display warning if the two regions differ significantly
-    if abs(topRightSignal - bottomRightSignal) > min([topRightSignal bottomRightSignal])*0.1
-        warning(['background subtraction sample region signals differ by more than 10% for ' filename])
+    
+    %% get signal from sample frame
+    % method one: use signal from the final image
+    if backgroundSubtractMethod == 1
+        backgroundSignal = sum(image(:));
+    % method two: use ROI mask
+    elseif backgroundSubtractMethod == 2
+        % get roi mask
+        figure;imshow(image,[]);%0 512]);
+        ROImask = double(roipoly);
+    % method three: sample one frame towards (but isn't) the beginning of the recording and use signal from two corners
+    elseif backgroundSubtractMethod == 3
+        % get new image dimensions
+        [croppedImageHeight,croppedImageWidth] = size(image);
+        % get signal from two corners
+        topRightCorner = image(1:round(0.05*croppedImageHeight),round(0.95*croppedImageWidth):croppedImageWidth); % top right 5% of image
+        bottomRightCorner = image(round(0.95*croppedImageHeight):croppedImageHeight,round(0.95*croppedImageWidth):croppedImageWidth); % bottom right 5% of image
+        topRightSignal = sum(topRightCorner(:))/numel(topRightCorner);
+        bottomRightSignal = sum(bottomRightCorner(:))/numel(bottomRightCorner);
+        % get average background signal for those two sample sqaures
+        backgroundSignal = mean([topRightSignal bottomRightSignal]);
+        % display warning if the two regions differ significantly
+        if abs(topRightSignal - bottomRightSignal) > min([topRightSignal bottomRightSignal])*0.1
+            warning(['background subtraction sample region signals differ by more than 10% for ' filename])
+        end
     end
 end
 
 %% calculate signal from all frames
 for imageCtr = 1:numImages
     % read image frame
-    image = imread(filename, imageCtr);
+    image = double(imread(filename, imageCtr,'Info',info));
+    % crop out the bordering 3% from all four sides
+    if ~backgroundSubtractOption
+        [imageHeight,imageWidth] = size(image);
+    end
+    image = image(round(0.03*imageHeight):round(0.97*imageHeight), round(0.03*imageWidth):round(0.97*imageWidth));
     % median filter to despeckle
     if medianFilterOption
         image = medfilt2(image); % median filter to despeckle
@@ -97,10 +116,20 @@ for imageCtr = 1:numImages
             image = bin_matrix(image, binFactor);
         end
     end
+    % subtract background
     if backgroundSubtractOption
-        % subtract background
-        image = image-backgroundSignal;
+        if backgroundSubtractMethod == 2
+        % select ROI (subtract background method 2)
+        image = image.*ROImask;
+        elseif backgroundSubtractMethod == 3
+            % (subtract background method 1)
+            image = image-backgroundSignal;
+        end
     end
     % get total signal from the whole image
     signal(imageCtr) = sum(image(:));
+    % subtract background (method 1)
+    if backgroundSubtractOption & backgroundSubtractMethod == 1
+        signal(imageCtr) = signal(imageCtr) - backgroundSignal;
+    end
 end

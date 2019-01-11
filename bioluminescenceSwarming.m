@@ -4,15 +4,31 @@ close all
 %% script takes a list of tiff stack images from bioluminescence swarming experiments and plots signal over time
 
 %% set parameters
-directory = '/Volumes/behavgenom$/Serena/bioluminescenceSwarming/gly001Test/multiSample/20181221_Gly001_20uL_30sExp300sInt_2x2bin_10hr_overnightbac/';
+
+% files to analyse
+directory = '/Volumes/behavgenom$/Serena/bioluminescenceSwarming/gly001Test/multiSample/20190108_Gly001_20uL_30sExp300sInt_2x2bin_16hr_freshbac/20190108_Gly001_20uL_30sExp300sInt_2x2bin_16hr_freshbac_2/';
 binning = '2x2'; % '8x8' or '2x2'
-duration = '10hr';
-bgSubtractOption = false;
-medianFilterOption = true;
+duration = '16hr'; % '10hr' or '75hr'
+
+% post-processing options
+medianFilterOption = true;  
 binOption = false;
+backgroundSubtractOption = true;
+backgroundSubtractMethod = 1; % only applies of "backgroundSubtractOption" is switched on
+
+% saving option
 saveResults = false;
 
-% set up
+% figure export options
+exportOptions = struct('Format','eps2',...
+    'Color','rgb',...
+    'Width',30,...
+    'Resolution',300,...
+    'FontMode','fixed',...
+    'FontSize',25,...
+    'LineWidth',3);
+
+%% set up
 addpath('../AggScreening/auxiliary/')
 signalQuantFig = figure; hold on
 if contains(directory,'multiSample') % need to generate metadata file and read this from there
@@ -22,6 +38,8 @@ if contains(directory,'multiSample') % need to generate metadata file and read t
     date = date{1};
     if strcmp(date, '20181218')
         legends = {'controlPos0','controlPos1','N2Pos2','DA609Pos3','DA609Pos4','DA609Pos5'};
+    elseif strcmp(date,'20190108')
+        legends = {'N2Pos0','DA609Pos1','ControlPos2','N2Pos3','ControlPos4','DA609Pos5'};
     else
         legends = {'controlPos0','controlPos1','N2Pos2','N2Pos3','DA609Pos4','DA609Pos5'};
     end
@@ -29,17 +47,13 @@ else
     legends = {};
 end
 
-exportOptions = struct('Format','eps2',...
-    'Color','rgb',...
-    'Width',30,...
-    'Resolution',300,...
-    'FontMode','fixed',...
-    'FontSize',25,...
-    'LineWidth',3);
-
 %% get file names
 % get a list of tif files
-[fileList, ~] = dirSearch(directory,[binning '*' duration '*.tif']);
+if strcmp(duration,'75hr') | contains(directory,'multiSample')
+    [fileList, ~] = dirSearch(directory,[binning '*' duration '*.tif']);
+else
+    [fileList, ~] = dirSearch(directory,[binning '*Pos0.ome.tif']);
+end
 if contains(directory,'multiSample')
     filenamesAll = fileList;
 else
@@ -69,10 +83,11 @@ for fileCtr = 1:numFiles
     % get filename
     filename = filenamesAll{fileCtr};
     % get signal
-    signal{fileCtr} = getSignal(filename,bgSubtractOption,medianFilterOption,binOption);
+    signal{fileCtr} = getSignal(filename,medianFilterOption,binOption,binning,backgroundSubtractOption,backgroundSubtractMethod);
     % plot signal
     set(0,'CurrentFigure',signalQuantFig)
-    plot(smoothdata(signal{fileCtr}))
+    %plot(signal{fileCtr})
+    plot(smoothdata(signal{fileCtr},'movmedian'))
     % add to figure legend
     if ~contains(directory, 'multiSample')
         date = strsplit(filename,'/');
@@ -89,7 +104,7 @@ for fileCtr = 1:numFiles
     end
 end 
 
-% format figure
+%% format figure
 if strcmp(binning,'8x8')
     xlim([0 1200])
     ylim([0 1e7])
@@ -97,10 +112,11 @@ if strcmp(binning,'8x8')
 elseif strcmp(binning,'2x2')
     if contains(directory,'multiSample')
         xlim([3 120])
-        if bgSubtractOption
-            ylim([2e6 4.5e6])
+        if backgroundSubtractOption
+            ylim([-1e6 9e6])
         else
-            ylim([6.5e7 7.5e7])
+            %ylim([6.5e7 7.5e7])
+            ylim([2.7e8 3e8])
         end
         xlabel('frame number (@12fph)')
     else
@@ -112,16 +128,18 @@ ylabel('signal (a.u.)')
 L = legend(legends,'Location','eastoutside');
 set(L,'Interpreter', 'none')
 
-% export figure
+%% export figure
 figurename = ['results/bioluminescenceQuant_' binning '_' duration];
 if contains(directory,'multiSample')
-    figurename = [figurename '_multiSample_' date];
+    figurename = ['results/multiSample/bioluminescenceQuant_' binning '_' duration '_multiSample_' date];
 end
 if contains(directory,'overnightbac')
     figurename = [figurename '_overnightbac'];
 end
-if ~bgSubtractOption
+if ~backgroundSubtractOption
     figurename = [figurename '_noBgSubtraction'];
+else
+    figurename = [figurename '_bgMethod' num2str(backgroundSubtractMethod)];
 end
 if saveResults
     exportfig(signalQuantFig,[figurename '.eps'],exportOptions)
