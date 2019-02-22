@@ -6,14 +6,14 @@ close all
 %% set parameters
 
 % files to analyse
-directory = '/Volumes/behavgenom$/Serena/bioluminescenceSwarming/gly001Test/multiSample/20190108_Gly001_20uL_30sExp300sInt_2x2bin_16hr_freshbac/20190108_Gly001_20uL_30sExp300sInt_2x2bin_16hr_freshbac_2/';
+directory = '/Volumes/behavgenom$/Serena/bioluminescenceSwarming/gly001Test/multiSample/20190214_Gly001_20uL_30sExp60Int_2x2bin_40hr_growthExp/';
 binning = '2x2'; % '8x8' or '2x2'
-duration = '16hr'; % '10hr' or '75hr'
+duration = '40hr'; % '10hr' or '75hr'
 
 % post-processing options
 medianFilterOption = true;  
 binOption = false;
-backgroundSubtractOption = true;
+backgroundSubtractOption = false;
 backgroundSubtractMethod = 1; % only applies of "backgroundSubtractOption" is switched on
 
 % saving option
@@ -49,7 +49,7 @@ end
 
 %% get file names
 % get a list of tif files
-if strcmp(duration,'75hr') | contains(directory,'multiSample')
+if ~strcmp(duration,'10hr') | contains(directory,'multiSample')
     [fileList, ~] = dirSearch(directory,[binning '*' duration '*.tif']);
 else
     [fileList, ~] = dirSearch(directory,[binning '*Pos0.ome.tif']);
